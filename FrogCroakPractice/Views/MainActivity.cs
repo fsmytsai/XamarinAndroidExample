@@ -72,6 +72,20 @@ namespace FrogCroakPractice
             }
         }
 
+        public override void OnRequestPermissionsResult(int requestCode, string[] permissions, [GeneratedEnum] Permission[] grantResults)
+        {
+            base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
+            switch (requestCode)
+            {
+                case READ_EXTERNAL_STORAGE:
+                    if (grantResults.Length == 1 && grantResults[0] == (int)Permission.Granted)
+                        OpenImageChooser();
+                    else
+                        Toast.MakeText(this, "您拒絕選取檔案", ToastLength.Short).Show();
+                    return;
+            }
+        }
+
         void OpenImageChooser()
         {
             Intent picker = new Intent(Intent.ActionGetContent);
@@ -82,20 +96,6 @@ namespace FrogCroakPractice
             StartActivityForResult(destIntent, CHOOSE_IMAGE_FILE);
         }
 
-        public override void OnRequestPermissionsResult(int requestCode, string[] permissions, [GeneratedEnum] Permission[] grantResults)
-        {
-            base.OnRequestPermissionsResult(requestCode, permissions, grantResults);
-            switch (requestCode)
-            {
-                case READ_EXTERNAL_STORAGE:
-                    if (grantResults.Length > 0 && grantResults[0] == (int)Permission.Granted)
-                        OpenImageChooser();
-                    else
-                        Toast.MakeText(this, "您拒絕選取檔案", ToastLength.Short).Show();
-                    return;
-            }
-        }
-
         protected override async void OnActivityResult(int requestCode, Result resultCode, Intent data)
         {
             base.OnActivityResult(requestCode, resultCode, data);
@@ -103,17 +103,21 @@ namespace FrogCroakPractice
             {
                 tv_RMessage.Visibility = ViewStates.Gone;
                 Android.Net.Uri uri = data.Data;
+
+                //顯示圖片
                 Bitmap bitmap = MediaStore.Images.Media.GetBitmap(this.ContentResolver, uri);
                 iv_Frog.Visibility = ViewStates.Visible;
                 iv_Frog.SetImageBitmap(bitmap);
 
+
                 AllRequestResult result = null;
 
-                tv_LMessage.Text = "辨識中";
+                tv_LMessage.Text = "辨識中...";
 
                 await Task.Run(() =>
                 {
-                    result = UploadImage(uri);
+                    string FileName = CreateFileAndGetFileNameFromUri(uri);
+                    result = UploadImage(FilesDir.AbsolutePath + "/" + FileName);
                 });
 
                 if (result.IsSuccess)
@@ -122,25 +126,27 @@ namespace FrogCroakPractice
                 }
                 else
                 {
+                    tv_LMessage.Text = "辨識失敗";
                     WebExceptionHandler((WebException)result.Result);
                 }
             }
         }
 
-        public AllRequestResult UploadImage(Android.Net.Uri uri)
+        public AllRequestResult UploadImage(string FilePath)
         {
-            using (Stream input = ContentResolver.OpenInputStream(uri))
-            using (var file = System.IO.File.Create(FilesDir.AbsolutePath + "/Frog.jpg"))
-            {
-                input.CopyTo(file);
-            }
+            string ContentType = "";
+            string[] Type = FilePath.Split('.');
+            if (System.String.Compare(Type[Type.Length - 1], "jpg", true) == 0)
+                ContentType = "jpeg";
+            else
+                ContentType = Type[Type.Length - 1].ToLower();
 
             try
             {
                 using (WebClient client = new WebClient())
                 {
-                    client.Headers[HttpRequestHeader.ContentType] = "image/jpeg";
-                    byte[] result = client.UploadFile("https://frogcroak.azurewebsites.net/api/ImageApi/UploadImage", FilesDir.AbsolutePath + "/Frog.jpg");
+                    client.Headers[HttpRequestHeader.ContentType] = "image/" + ContentType;
+                    byte[] result = client.UploadFile("https://frogcroak.azurewebsites.net/api/ImageApi/UploadImage", FilePath);
                     string Frog = JsonConvert.DeserializeObject<string>(Encoding.Default.GetString(result));
                     return new AllRequestResult
                     {
@@ -163,22 +169,24 @@ namespace FrogCroakPractice
         {
             HideKeyboard();
             Activity_Outer.RequestFocus();
-            if (et_Message.Text.Trim() == "")
+            string Content = et_Message.Text;
+            et_Message.Text = "";
+            if (Content.Trim() == "")
             {
                 Toast.MakeText(this, "請輸入內容", ToastLength.Short).Show();
                 return;
             }
 
-            tv_RMessage.Text = et_Message.Text;
+            tv_RMessage.Text = Content;
             tv_RMessage.Visibility = ViewStates.Visible;
             iv_Frog.Visibility = ViewStates.Gone;
 
-            tv_LMessage.Text = "辨識中";
+            tv_LMessage.Text = "辨識中...";
 
             AllRequestResult result = null;
             await Task.Run(() =>
             {
-                result = CreateMessage(et_Message.Text);
+                result = CreateMessage(Content);
             });
 
             if (result.IsSuccess)
@@ -189,6 +197,7 @@ namespace FrogCroakPractice
             }
             else
             {
+                tv_LMessage.Text = "辨識失敗";
                 WebExceptionHandler((WebException)result.Result);
             }
         }
@@ -223,6 +232,34 @@ namespace FrogCroakPractice
                     Result = ex
                 };
             }
+        }
+
+        string CreateFileAndGetFileNameFromUri(Android.Net.Uri Uri)
+        {
+            string FileName = "";
+            if (Uri.ToString().StartsWith("content://"))
+            {
+                using (var cursor = ContentResolver.Query(Uri, null, null, null, null))
+                {
+                    cursor.MoveToFirst();
+                    FileName = cursor.GetString(cursor.GetColumnIndex(OpenableColumns.DisplayName));
+                }
+            }
+            else
+            {
+                FileName = new Java.IO.File(Uri.ToString()).Name;
+            }
+
+            //將檔案寫進 App 內
+            using (Stream input = ContentResolver.OpenInputStream(Uri))
+            {
+                using (var FileStream = File.Create(FilesDir.AbsolutePath + "/" + FileName))
+                {
+                    input.CopyTo(FileStream);
+                }
+            }
+
+            return FileName;
         }
 
         void WebExceptionHandler(WebException exception)
