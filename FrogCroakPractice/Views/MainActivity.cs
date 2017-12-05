@@ -264,7 +264,7 @@ namespace FrogCroakPractice
 
         void WebExceptionHandler(WebException exception)
         {
-            if (exception.Status == WebExceptionStatus.ProtocolError && exception.Response != null)
+            if (exception.Response != null)
             {
                 var response = (HttpWebResponse)exception.Response;
                 if (response.StatusCode == HttpStatusCode.BadRequest)
