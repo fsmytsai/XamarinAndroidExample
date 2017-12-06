@@ -105,10 +105,8 @@ namespace FrogCroakPractice
                 Android.Net.Uri uri = data.Data;
 
                 //顯示圖片
-                Bitmap bitmap = MediaStore.Images.Media.GetBitmap(this.ContentResolver, uri);
                 iv_Frog.Visibility = ViewStates.Visible;
-                iv_Frog.SetImageBitmap(bitmap);
-
+                iv_Frog.SetImageURI(uri);
 
                 AllRequestResult result = null;
 
